@@ -457,23 +457,24 @@
 // ══════════════════════════════════════════════
 //  CONSTANTS
 // ══════════════════════════════════════════════
-const SETUP_SQL =
-`create table if not exists sessions (
-  id text primary key,
-  user_id uuid references auth.users not null,
-  date text not null,
-  label text,
-  notes text,
-  exercises jsonb not null default '[]',
-  saved_at bigint
-);
-alter table sessions enable row level security;
-create policy "own_sessions" on sessions
-  for all using (auth.uid() = user_id);`;
+var SUPABASE_URL = 'https://dwwpjwfbmbsoqfslolgc.supabase.co';
+var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3d3Bqd2ZibWJzb3Fmc2xvbGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MTQ2NzMsImV4cCI6MjA5MDM5MDY3M30.oGFq4NAyEQpbzk6t0L7pJHsbxlsyMQh7ReGxVkm3rfU';
 
-document.getElementById('setup-sql-display').textContent = SETUP_SQL;
+var SETUP_SQL =
+'create table if not exists sessions (\n' +
+'  id        text primary key,\n' +
+'  user_id   uuid references auth.users not null,\n' +
+'  date      text not null,\n' +
+'  label     text,\n' +
+'  notes     text,\n' +
+'  exercises jsonb not null default \'[]\',\n' +
+'  saved_at  bigint\n' +
+');\n' +
+'alter table sessions enable row level security;\n' +
+'create policy "own_sessions" on sessions\n' +
+'  for all using (auth.uid() = user_id);';
 
-const defaultLibrary = [
+var defaultLibrary = [
   'Bench Press','Incline Bench Press','Decline Bench Press',
   'Dumbbell Bench Press','Incline Dumbbell Press','Decline Dumbbell Press',
   'Dumbbell Fly','Incline Dumbbell Fly','Cable Fly','Low-to-High Cable Fly','High-to-Low Cable Fly',
@@ -504,10 +505,10 @@ const defaultLibrary = [
   'Thruster','Farmers Walk','Sled Push','Sled Pull','Tire Flip','Battle Ropes',
   'Kettlebell Swing','Turkish Get-Up','Box Jump','Broad Jump',
   'Treadmill','Incline Treadmill','Stairmaster','Elliptical','Rowing Machine',
-  'Assault Bike','Stationary Bike','Jump Rope','Sprint','Hill Sprint',
+  'Assault Bike','Stationary Bike','Jump Rope','Sprint','Hill Sprint'
 ];
 
-const muscleMap = {
+var muscleMap = {
   'Chest':      ['Bench Press','Incline Bench Press','Decline Bench Press','Dumbbell Bench Press','Incline Dumbbell Press','Decline Dumbbell Press','Dumbbell Fly','Incline Dumbbell Fly','Cable Fly','Low-to-High Cable Fly','High-to-Low Cable Fly','Chest Dip','Push-Up','Decline Push-Up','Cable Crossover','Machine Chest Press','Pec Deck'],
   'Back':       ['Deadlift','Romanian Deadlift','Sumo Deadlift','Trap Bar Deadlift','Barbell Row','Pendlay Row','T-Bar Row','Dumbbell Row','Cable Row','Machine Row','Pull-Up','Chin-Up','Wide-Grip Pull-Up','Lat Pulldown','Close-Grip Lat Pulldown','Straight-Arm Pulldown','Dumbbell Pullover','Face Pull','Rack Pull','Hyperextension','Meadows Row','Seal Row','Single-Arm Cable Row'],
   'Shoulders':  ['Overhead Press','Dumbbell Shoulder Press','Arnold Press','Machine Shoulder Press','Lateral Raise','Cable Lateral Raise','Front Raise','Rear Delt Fly','Cable Rear Delt Fly','Upright Row','Barbell Shrug','Dumbbell Shrug'],
@@ -517,49 +518,63 @@ const muscleMap = {
   'Hamstrings': ['Leg Curl','Seated Leg Curl','Nordic Curl','Good Morning','Single-Leg Romanian Deadlift','Romanian Deadlift'],
   'Glutes':     ['Hip Thrust','Barbell Hip Thrust','Glute Bridge','Cable Kickback','Reverse Hyperextension','Bulgarian Split Squat'],
   'Calves':     ['Standing Calf Raise','Seated Calf Raise','Leg Press Calf Raise'],
-  'Core':       ['Plank','Side Plank','Ab Wheel Rollout','Cable Crunch','Hanging Leg Raise','Decline Sit-Up','Russian Twist','Pallof Press','Dead Bug','Hollow Hold','Dragon Flag'],
+  'Core':       ['Plank','Side Plank','Ab Wheel Rollout','Cable Crunch','Hanging Leg Raise','Decline Sit-Up','Russian Twist','Pallof Press','Dead Bug','Hollow Hold','Dragon Flag']
 };
 
 // ══════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════
-var supabase       = null;
-var currentUser    = null;
-var sessions       = [];
+var supabase        = null;
+var currentUser     = null;
+var sessions        = [];
 var exerciseLibrary = defaultLibrary.slice();
-var currentSession = null;
-var chartVolume    = null;
-var chartFreq      = null;
-var chartPR        = null;
-var volumePeriod   = '4w';
-var freqPeriod     = '8w';
+var currentSession  = null;
+var chartVolume     = null;
+var chartFreq       = null;
+var chartPR         = null;
+var volumePeriod    = '4w';
+var freqPeriod      = '8w';
 
 // ══════════════════════════════════════════════
-//  SHOW SCREEN
+//  SUPABASE SDK LOADER
 // ══════════════════════════════════════════════
-function showScreen(name) {
-  ['loading-screen','auth-screen','config-screen','app'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-  });
-  var map = { loading:'loading-screen', auth:'auth-screen', config:'config-screen', app:'app' };
-  var el = document.getElementById(map[name]);
-  if (el) el.style.display = 'flex';
+function waitForSupabase(cb) {
+  if (window.__sbFailed) {
+    document.getElementById('loading-screen').innerHTML =
+      '<div style="text-align:center;padding:40px;max-width:360px">' +
+      '<div style="font-family:var(--font-display);font-size:2rem;color:var(--accent);margin-bottom:16px">IronLog</div>' +
+      '<div style="font-family:var(--font-mono);font-size:0.7rem;color:var(--accent2);letter-spacing:0.1em;margin-bottom:16px">SDK FAILED TO LOAD</div>' +
+      '<p style="font-size:0.85rem;color:var(--text-muted);line-height:1.6;margin-bottom:20px">Could not load Supabase. Check your internet connection.</p>' +
+      '<button onclick="location.reload()" style="font-family:var(--font-mono);font-size:0.72rem;letter-spacing:0.1em;padding:10px 20px;background:var(--accent);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">RETRY</button>' +
+      '</div>';
+    return;
+  }
+  if (window.supabase && window.supabase.createClient) { cb(); return; }
+  var tries = 0;
+  var t = setInterval(function() {
+    tries++;
+    if (window.supabase && window.supabase.createClient) {
+      clearInterval(t); cb();
+    } else if (tries > 80) {
+      clearInterval(t);
+      document.getElementById('loading-screen').innerHTML =
+        '<div style="text-align:center;padding:40px;max-width:360px">' +
+        '<div style="font-family:var(--font-display);font-size:2rem;color:var(--accent);margin-bottom:16px">IronLog</div>' +
+        '<div style="font-family:var(--font-mono);font-size:0.7rem;color:var(--accent2);letter-spacing:0.1em;margin-bottom:16px">SDK TIMEOUT</div>' +
+        '<p style="font-size:0.85rem;color:var(--text-muted);line-height:1.6;margin-bottom:20px">Supabase took too long to load. Check your connection and retry.</p>' +
+        '<button onclick="location.reload()" style="font-family:var(--font-mono);font-size:0.72rem;letter-spacing:0.1em;padding:10px 20px;background:var(--accent);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">RETRY</button>' +
+        '</div>';
+    }
+  }, 100);
 }
 
 // ══════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════
-var SUPABASE_URL = 'https://dwwpjwfbmbsoqfslolgc.supabase.co';
-var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3d3Bqd2ZibWJzb3Fmc2xvbGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MTQ2NzMsImV4cCI6MjA5MDM5MDY3M30.oGFq4NAyEQpbzk6t0L7pJHsbxlsyMQh7ReGxVkm3rfU';
-
 function init() {
-  var url = SUPABASE_URL;
-  var key = SUPABASE_KEY;
-
   waitForSupabase(function() {
     try {
-      supabase = window.supabase.createClient(url, key, {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: {
           detectSessionInUrl: true,
           persistSession: true,
@@ -567,60 +582,43 @@ function init() {
         }
       });
 
-      var appLoaded = false;
-      function bootApp(session) {
-        if (appLoaded) return;
-        appLoaded = true;
-        if (session) {
+      // Single gate — prevents double-boot if both INITIAL_SESSION and SIGNED_IN fire
+      var booted = false;
+      function boot(session) {
+        if (booted) return;
+        booted = true;
+        if (session && session.user) {
           currentUser = session.user;
-          // Clean up URL hash left by OAuth redirect
-          if (window.location.hash && window.location.hash.indexOf('access_token') !== -1) {
-            history.replaceState(null, '', window.location.pathname);
-          }
+          // Strip OAuth tokens from URL bar
+          if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
           loadApp();
         } else {
           showScreen('auth');
         }
       }
 
-      // onAuthStateChange fires first on page load — use it as the primary signal
       supabase.auth.onAuthStateChange(function(event, session) {
-        if (event === 'SIGNED_IN') {
-          bootApp(session);
+        if (event === 'INITIAL_SESSION') {
+          boot(session);
+        } else if (event === 'SIGNED_IN') {
+          // After OAuth redirect — reset booted so we can re-enter app
+          booted = false;
+          boot(session);
         } else if (event === 'SIGNED_OUT') {
-          appLoaded = false;
+          booted = false;
           currentUser = null;
           sessions = [];
           showScreen('auth');
-        } else if (event === 'TOKEN_REFRESHED') {
-          // Keep currentUser up to date, no need to reload app
-          if (session) currentUser = session.user;
-        } else if (event === 'INITIAL_SESSION') {
-          bootApp(session);
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          currentUser = session.user;
         }
       });
 
     } catch(e) {
-      console.error('Supabase init failed:', e);
+      console.error('Init error:', e);
       showScreen('auth');
     }
   });
-}
-
-// Poll until Supabase SDK is available (CDN can be slow)
-function waitForSupabase(cb) {
-  if (window.supabase && window.supabase.createClient) { cb(); return; }
-  var tries = 0;
-  var t = setInterval(function() {
-    tries++;
-    if (window.supabase && window.supabase.createClient) {
-      clearInterval(t); cb();
-    } else if (tries > 60) {
-      clearInterval(t);
-      showScreen('auth');
-      alert('Supabase SDK failed to load. Check your internet connection and reload the page.');
-    }
-  }, 100);
 }
 
 function loadApp() {
@@ -631,127 +629,87 @@ function loadApp() {
   syncAll(true);
 }
 
-// ══════════════════════════════════════════════
-//  CONFIG
-// ══════════════════════════════════════════════
-function saveConfig() {
-  const url = document.getElementById('cfg-url').value.trim();
-  const key = document.getElementById('cfg-key').value.trim();
-  if (!url || !key) { toast('Fill both fields', 'error'); return; }
-  localStorage.setItem('sb_url', url);
-  localStorage.setItem('sb_key', key);
-  document.getElementById('loading-screen').style.display = 'flex';
-  document.getElementById('config-screen').style.display  = 'none';
-  // Wait for Supabase to load before init
-function waitForSupabase() {
-  if (window.__sbFailed) {
-    document.getElementById('loading-screen').innerHTML =
-      '<div style="text-align:center;padding:40px;max-width:360px">' +
-      '<div style="font-family:var(--font-display);font-size:2rem;color:var(--accent);margin-bottom:16px">IRON LOG</div>' +
-      '<div style="font-family:var(--font-mono);font-size:0.7rem;color:var(--accent2);letter-spacing:0.1em;margin-bottom:16px">FAILED TO LOAD SDK</div>' +
-      '<p style="font-size:0.85rem;color:var(--text-muted);line-height:1.6;margin-bottom:20px">Could not load the Supabase library. This is usually a network/firewall issue.</p>' +
-      '<button onclick="location.reload()" style="font-family:var(--font-mono);font-size:0.72rem;letter-spacing:0.1em;padding:10px 20px;background:var(--accent);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">RETRY</button>' +
-      '</div>';
-    return;
-  }
-  if (window.supabase && window.supabase.createClient) {
-    init();
-  } else {
-    setTimeout(waitForSupabase, 100);
-  }
-}
-waitForSupabase();
-}
-
-function copySQL() {
-  navigator.clipboard.writeText(SETUP_SQL).then(() => toast('SQL copied!', 'success'));
+function showScreen(name) {
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('auth-screen').style.display    = 'none';
+  document.getElementById('app').style.display            = 'none';
+  if (name === 'auth') document.getElementById('auth-screen').style.display = 'flex';
+  if (name === 'app')  document.getElementById('app').style.display          = 'flex';
 }
 
 // ══════════════════════════════════════════════
 //  AUTH
 // ══════════════════════════════════════════════
-async function signInWithGoogle() {
-  if (!supabase) { showScreen('auth'); return; }
-  const { error } = await supabase.auth.signInWithOAuth({
+function signInWithGoogle() {
+  if (!supabase) return;
+  supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.href }
+    options: { redirectTo: window.location.href.split('#')[0].split('?')[0] }
   });
-  if (error) toast('Sign-in failed: ' + error.message, 'error');
 }
 
-async function signOut() {
-  await supabase.auth.signOut();
-  // Note: credentials are hardcoded, nothing to clear
-}
-
-function resetCredentials() {
-  if (!confirm('This will clear your Supabase credentials from this device and return to setup. Your cloud data is safe.')) return;
-  localStorage.removeItem('sb_url');
-  localStorage.removeItem('sb_key');
-  supabase = null; currentUser = null; sessions = [];
-  showScreen('auth');
+function signOut() {
+  supabase.auth.signOut();
 }
 
 function updateUserUI() {
   if (!currentUser) return;
-  const meta   = currentUser.user_metadata || {};
-  const avatar = document.getElementById('user-avatar');
+  var meta   = currentUser.user_metadata || {};
+  var avatar = document.getElementById('user-avatar');
   if (meta.avatar_url) {
-    avatar.innerHTML = '<img src="' + meta.avatar_url + '" alt="" />';
+    avatar.innerHTML = '<img src="' + meta.avatar_url + '" alt="" style="width:100%;height:100%;object-fit:cover" />';
   } else {
     avatar.textContent = (meta.full_name || currentUser.email || 'U')[0].toUpperCase();
   }
-  document.getElementById('user-info').innerHTML =
+  var info = document.getElementById('user-info');
+  if (info) info.innerHTML =
     '<strong>' + (meta.full_name || 'User') + '</strong><br>' +
-    '<span style="color:var(--text-muted);font-size:0.82rem">' + currentUser.email + '</span>';
+    '<span style="color:var(--text-muted);font-size:0.82rem">' + (currentUser.email || '') + '</span>';
 }
 
 // ══════════════════════════════════════════════
 //  SYNC
 // ══════════════════════════════════════════════
-async function syncAll(silent) {
+function syncAll(silent) {
   if (!supabase || !currentUser) return;
-  setSyncUI('syncing', 'Syncing…');
-  try {
-    const { data, error } = await supabase
-      .from('sessions').select('*')
-      .eq('user_id', currentUser.id)
-      .order('date', { ascending: false });
-    if (error) throw error;
-    sessions = (data || []).map(r => ({
-      id: r.id, date: r.date, label: r.label || '',
-      notes: r.notes || '', exercises: r.exercises || [],
-      savedAt: r.saved_at
-    }));
-    setSyncUI('ok', 'Synced ' + fmtTime(new Date()));
-    renderAll();
-    if (!silent) toast('Synced ✓', 'success');
-  } catch(e) {
-    setSyncUI('error', 'Sync failed');
-    if (!silent) toast('Sync failed: ' + e.message, 'error');
-  }
+  setSyncUI('syncing', 'Syncing...');
+  supabase.from('sessions').select('*').eq('user_id', currentUser.id).order('date', { ascending: false })
+    .then(function(res) {
+      if (res.error) throw res.error;
+      sessions = (res.data || []).map(function(r) {
+        return { id: r.id, date: r.date, label: r.label || '', notes: r.notes || '', exercises: r.exercises || [], savedAt: r.saved_at };
+      });
+      setSyncUI('ok', 'Synced ' + fmtTime(new Date()));
+      renderAll();
+      if (!silent) toast('Synced', 'success');
+    })
+    .catch(function(e) {
+      setSyncUI('error', 'Sync failed');
+      if (!silent) toast('Sync failed', 'error');
+    });
 }
 
-async function pushSession(s) {
+function pushSession(s) {
   if (!supabase || !currentUser) return;
-  const { error } = await supabase.from('sessions').upsert({
+  supabase.from('sessions').upsert({
     id: s.id, user_id: currentUser.id,
     date: s.date, label: s.label || '', notes: s.notes || '',
     exercises: s.exercises, saved_at: s.savedAt
+  }).then(function(res) {
+    if (res.error) console.error('Push error:', res.error.message);
   });
-  if (error) console.error('Push error:', error.message);
 }
 
-async function removeSessionRemote(id) {
+function removeSessionRemote(id) {
   if (!supabase || !currentUser) return;
-  await supabase.from('sessions').delete().eq('id', id).eq('user_id', currentUser.id);
+  supabase.from('sessions').delete().eq('id', id).eq('user_id', currentUser.id).then(function() {});
 }
 
 function setSyncUI(state, msg) {
-  const dot = document.getElementById('settings-sync-dot');
-  const lbl = document.getElementById('settings-sync-label');
-  const ind = document.getElementById('sync-indicator');
-  if (dot) dot.className = 'sync-dot ' + (state === 'ok' ? 'ok' : state === 'error' ? 'error' : state === 'syncing' ? 'syncing' : '');
+  var dot = document.getElementById('settings-sync-dot');
+  var lbl = document.getElementById('settings-sync-label');
+  var ind = document.getElementById('sync-indicator');
+  if (dot) dot.className = 'sync-dot' + (state === 'ok' ? ' ok' : state === 'error' ? ' error' : state === 'syncing' ? ' syncing' : '');
   if (lbl) lbl.textContent = msg;
   if (ind) ind.textContent = state === 'syncing' ? '⟳' : state === 'error' ? '!' : '';
 }
@@ -760,14 +718,15 @@ function setSyncUI(state, msg) {
 //  NAV
 // ══════════════════════════════════════════════
 function switchView(v) {
-  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.nav-tab').forEach(function(el) { el.classList.remove('active'); });
   document.getElementById('view-' + v).classList.add('active');
-  const tab = document.querySelector('[data-view="' + v + '"]');
+  var tab = document.querySelector('[data-view="' + v + '"]');
   if (tab) tab.classList.add('active');
   if (v === 'charts')  renderCharts();
   if (v === 'stats')   renderStats();
   if (v === 'history') renderHistory();
+  if (v === 'settings') renderLibraryList();
 }
 
 // ══════════════════════════════════════════════
@@ -780,22 +739,22 @@ function startSession() {
   document.getElementById('workout-label').value = '';
   document.getElementById('workout-notes').value = '';
   document.getElementById('exercises-container').innerHTML = '';
-  document.getElementById('no-session').style.display    = 'none';
+  document.getElementById('no-session').style.display     = 'none';
   document.getElementById('active-session').style.display = 'block';
   switchView('log');
   addExercise();
 }
 
 function discardSession() {
-  showConfirm('DISCARD SESSION?', 'All unsaved data will be lost.', () => {
+  showConfirm('DISCARD SESSION?', 'All unsaved data will be lost.', function() {
     currentSession = null;
     document.getElementById('active-session').style.display = 'none';
-    document.getElementById('no-session').style.display    = 'block';
+    document.getElementById('no-session').style.display     = 'block';
   });
 }
 
-async function finishSession() {
-  const exercises = collectExercises();
+function finishSession() {
+  var exercises = collectExercises();
   if (!exercises.length) { toast('Add at least one exercise!', 'error'); return; }
   currentSession.date      = document.getElementById('workout-date').value || currentSession.date;
   currentSession.label     = document.getElementById('workout-label').value.trim();
@@ -803,30 +762,30 @@ async function finishSession() {
   currentSession.exercises = exercises;
   currentSession.savedAt   = Date.now();
   sessions.unshift(currentSession);
-  sessions.sort((a,b) => b.date.localeCompare(a.date));
-  await pushSession(currentSession);
+  sessions.sort(function(a,b) { return b.date.localeCompare(a.date); });
+  pushSession(currentSession);
   currentSession = null;
   document.getElementById('active-session').style.display = 'none';
-  document.getElementById('no-session').style.display    = 'block';
+  document.getElementById('no-session').style.display     = 'block';
   renderAll();
   toast('Session saved! 💪', 'success');
 }
 
 function collectExercises() {
-  const result = [];
-  document.querySelectorAll('.exercise-block').forEach(block => {
-    const name = block.querySelector('.exercise-name-input').value.trim();
+  var result = [];
+  document.querySelectorAll('.exercise-block').forEach(function(block) {
+    var name = block.querySelector('.exercise-name-input').value.trim();
     if (!name) return;
-    const sets = [];
-    block.querySelectorAll('tbody tr').forEach(row => {
-      const inputs = row.querySelectorAll('.set-input');
-      const w = inputs[0]?.value.trim();
-      const r = inputs[1]?.value.trim();
-      const rpe = inputs[2]?.value.trim();
-      const done = row.querySelector('.set-done')?.classList.contains('checked');
+    var sets = [];
+    block.querySelectorAll('tbody tr').forEach(function(row) {
+      var inputs = row.querySelectorAll('.set-input');
+      var w = inputs[0] ? inputs[0].value.trim() : '';
+      var r = inputs[1] ? inputs[1].value.trim() : '';
+      var rpe = inputs[2] ? inputs[2].value.trim() : '';
+      var done = row.querySelector('.set-done') ? row.querySelector('.set-done').classList.contains('checked') : false;
       if (w || r) sets.push({ weight: w, reps: r, rpe: rpe, done: done });
     });
-    if (sets.length) result.push({ name, sets });
+    if (sets.length) result.push({ name: name, sets: sets });
   });
   return result;
 }
@@ -836,16 +795,16 @@ function collectExercises() {
 // ══════════════════════════════════════════════
 function addExercise(name) {
   name = name || '';
-  const id   = 'ex_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
-  const opts = exerciseLibrary.map(e => '<option value="' + e + '">').join('');
-  const block = document.createElement('div');
+  var id   = 'ex_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+  var opts = exerciseLibrary.map(function(e) { return '<option value="' + e + '">'; }).join('');
+  var block = document.createElement('div');
   block.className = 'exercise-block';
   block.id = id;
   block.innerHTML =
     '<div class="exercise-header">' +
-      '<input class="exercise-name-input" list="exlist-' + id + '" placeholder="Exercise name…" value="' + name + '" autocomplete="off" />' +
+      '<input class="exercise-name-input" list="exlist-' + id + '" placeholder="Exercise name..." value="' + name + '" autocomplete="off" />' +
       '<datalist id="exlist-' + id + '">' + opts + '</datalist>' +
-      '<button class="btn-icon" onclick="removeExercise(\'' + id + '\')">✕</button>' +
+      '<button class="btn-icon" onclick="removeExercise(\'' + id + '\')">&#x2715;</button>' +
     '</div>' +
     '<table class="sets-table">' +
       '<thead><tr><th>#</th><th>KG</th><th>REPS</th><th>RPE</th><th></th><th></th></tr></thead>' +
@@ -860,69 +819,71 @@ function addExercise(name) {
 }
 
 function addSet(exId) {
-  const tbody = document.getElementById('sets-' + exId);
-  const n = tbody.children.length + 1;
-  const sid = 'set_' + Date.now() + '_' + n;
-  const row = document.createElement('tr');
+  var tbody = document.getElementById('sets-' + exId);
+  var n = tbody.children.length + 1;
+  var sid = 'set_' + Date.now() + '_' + n;
+  var row = document.createElement('tr');
   row.id = sid;
   row.innerHTML =
     '<td><span class="set-num">' + n + '</span></td>' +
-    '<td><input class="set-input" type="number" min="0" step="0.5" placeholder="—" inputmode="decimal" /></td>' +
-    '<td><input class="set-input" type="number" min="0" step="1" placeholder="—" inputmode="numeric" /></td>' +
-    '<td><input class="set-input" type="number" min="1" max="10" step="0.5" placeholder="—" inputmode="decimal" style="width:52px" /></td>' +
-    '<td><button class="set-done" onclick="this.classList.toggle(\'checked\');this.textContent=this.classList.contains(\'checked\')?\'✓\':\'\'"></button></td>' +
-    '<td><button class="btn-icon" style="font-size:0.7rem;padding:4px 6px" onclick="removeSet(\'' + sid + '\')">✕</button></td>';
+    '<td><input class="set-input" type="number" min="0" step="0.5" placeholder="&#x2014;" inputmode="decimal" /></td>' +
+    '<td><input class="set-input" type="number" min="0" step="1" placeholder="&#x2014;" inputmode="numeric" /></td>' +
+    '<td><input class="set-input" type="number" min="1" max="10" step="0.5" placeholder="&#x2014;" inputmode="decimal" style="width:52px" /></td>' +
+    '<td><button class="set-done" onclick="this.classList.toggle(\'checked\');this.textContent=this.classList.contains(\'checked\')?\'&#x2713;\':\'\'"></button></td>' +
+    '<td><button class="btn-icon" style="font-size:0.7rem;padding:4px 6px" onclick="removeSet(\'' + sid + '\')">&#x2715;</button></td>';
   tbody.appendChild(row);
 }
 
 function removeSet(id) {
-  const row = document.getElementById(id);
-  const tbody = row.parentElement;
+  var row = document.getElementById(id);
+  if (!row) return;
+  var tbody = row.parentElement;
   row.remove();
-  [...tbody.querySelectorAll('.set-num')].forEach((el, i) => el.textContent = i + 1);
+  Array.from(tbody.querySelectorAll('.set-num')).forEach(function(el, i) { el.textContent = i + 1; });
 }
 
-function removeExercise(id) { document.getElementById(id) && document.getElementById(id).remove(); }
+function removeExercise(id) {
+  var el = document.getElementById(id);
+  if (el) el.remove();
+}
 
 // ══════════════════════════════════════════════
 //  HISTORY
 // ══════════════════════════════════════════════
 function renderHistory() {
-  const q    = (document.getElementById('history-search') ? document.getElementById('history-search').value : '').toLowerCase();
-  const list = document.getElementById('history-list');
+  var q    = document.getElementById('history-search') ? document.getElementById('history-search').value.toLowerCase() : '';
+  var list = document.getElementById('history-list');
   if (!list) return;
-  const filtered = sessions.filter(s => {
+  var filtered = sessions.filter(function(s) {
     if (!q) return true;
-    if (s.label && s.label.toLowerCase().includes(q)) return true;
-    return (s.exercises || []).some(e => e.name.toLowerCase().includes(q));
+    if (s.label && s.label.toLowerCase().indexOf(q) !== -1) return true;
+    return (s.exercises || []).some(function(e) { return e.name.toLowerCase().indexOf(q) !== -1; });
   });
   if (!filtered.length) {
-    list.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">' + (q ? 'No results' : 'No sessions yet') + '</div></div>';
+    list.innerHTML = '<div class="empty"><div class="empty-icon">&#x1F4CB;</div><div class="empty-text">' + (q ? 'No results' : 'No sessions yet') + '</div></div>';
     return;
   }
   list.innerHTML = filtered.map(function(s) {
-    var totalSets = (s.exercises||[]).reduce(function(a,e){return a+e.sets.length;},0);
-    var exSummary = (s.exercises||[]).map(function(e) {
+    var totalSets = (s.exercises || []).reduce(function(a,e) { return a + e.sets.length; }, 0);
+    var exSummary = (s.exercises || []).map(function(e) {
       var pills = e.sets.map(function(set) {
-        var w = set.weight ? set.weight+'kg' : '';
-        var r = set.reps   ? set.reps+'r'   : '';
-        var txt = [w,r].filter(Boolean).join('x');
-        return '<span class="set-pill">' + txt + '</span>';
+        var w = set.weight ? set.weight + 'kg' : '';
+        var r = set.reps   ? set.reps + 'r'   : '';
+        return '<span class="set-pill">' + [w,r].filter(Boolean).join('x') + '</span>';
       }).join('');
       return '<div class="ex-summary"><div class="ex-summary-name">' + e.name + '</div><div class="ex-summary-sets">' + pills + '</div></div>';
     }).join('');
-    var tag = s.label ? '<span class="history-tag">' + s.label + '</span>' : '';
+    var tag      = s.label ? '<span class="history-tag">' + s.label + '</span>' : '';
     var noteHtml = s.notes ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:0.82rem;color:var(--text-muted)">' + s.notes + '</div>' : '';
-    var metaTxt = totalSets + ' sets · ' + (s.exercises||[]).length + ' exercises' + (s.label ? ' · '+s.label : '');
     return '<div class="history-item">' +
       '<div class="history-header" onclick="this.nextElementSibling.classList.toggle(\'open\')">' +
         '<div>' +
           '<div class="history-date">' + formatDate(s.date) + '</div>' +
-          '<div class="history-meta">' + metaTxt + '</div>' +
+          '<div class="history-meta">' + totalSets + ' sets &middot; ' + (s.exercises||[]).length + ' exercises' + (s.label ? ' &middot; ' + s.label : '') + '</div>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">' +
           tag +
-          '<button class="btn-icon" style="font-size:0.7rem;padding:3px 7px" onclick="event.stopPropagation();deleteSession(\'' + s.id + '\')">✕</button>' +
+          '<button class="btn-icon" style="font-size:0.7rem;padding:3px 7px" onclick="event.stopPropagation();deleteSession(\'' + s.id + '\')">&#x2715;</button>' +
         '</div>' +
       '</div>' +
       '<div class="history-body">' + exSummary + noteHtml + '</div>' +
@@ -931,24 +892,23 @@ function renderHistory() {
 }
 
 function renderRecentMini() {
-  const el = document.getElementById('recent-mini');
+  var el = document.getElementById('recent-mini');
   if (!el) return;
-  const recent = sessions.slice(0,3);
+  var recent = sessions.slice(0,3);
   if (!recent.length) { el.innerHTML = '<p class="text-muted text-sm">No sessions yet.</p>'; return; }
   el.innerHTML = recent.map(function(s) {
     var names = (s.exercises||[]).map(function(e){return e.name;}).slice(0,3).join(', ');
-    var more  = (s.exercises||[]).length > 3 ? ' +more' : '';
     return '<div class="card" style="padding:12px;margin-bottom:8px">' +
       '<div style="font-family:var(--font-display);font-size:1.2rem">' + formatDate(s.date) + '</div>' +
-      '<div style="font-family:var(--font-mono);font-size:0.63rem;color:var(--text-muted);margin-top:3px">' + names + more + '</div>' +
+      '<div style="font-family:var(--font-mono);font-size:0.63rem;color:var(--text-muted);margin-top:3px">' + names + ((s.exercises||[]).length > 3 ? ' +more' : '') + '</div>' +
     '</div>';
   }).join('');
 }
 
-async function deleteSession(id) {
-  showConfirm('DELETE SESSION?', 'This cannot be undone.', async function() {
-    sessions = sessions.filter(function(s){return s.id !== id;});
-    await removeSessionRemote(id);
+function deleteSession(id) {
+  showConfirm('DELETE SESSION?', 'This cannot be undone.', function() {
+    sessions = sessions.filter(function(s) { return s.id !== id; });
+    removeSessionRemote(id);
     renderAll();
     toast('Session deleted');
   });
@@ -961,7 +921,7 @@ function renderStats() {
   var grid   = document.getElementById('stats-grid');
   var prList = document.getElementById('pr-list');
   if (!grid || !prList) return;
-  var totalSets  = sessions.reduce(function(a,s){return a+(s.exercises||[]).reduce(function(b,e){return b+e.sets.length;},0);},0);
+  var totalSets  = sessions.reduce(function(a,s) { return a + (s.exercises||[]).reduce(function(b,e){return b+e.sets.length;},0); }, 0);
   var now        = new Date();
   var monthStr   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   var monthCount = sessions.filter(function(s){return s.date.startsWith(monthStr);}).length;
@@ -974,7 +934,7 @@ function renderStats() {
   var prMap = {};
   sessions.forEach(function(s) {
     (s.exercises||[]).forEach(function(e) {
-      var maxW = Math.max.apply(null, e.sets.map(function(set){return parseFloat(set.weight)||0;}));
+      var maxW = Math.max.apply(null, [0].concat(e.sets.map(function(set){return parseFloat(set.weight)||0;})));
       if (maxW > 0 && (!prMap[e.name] || maxW > prMap[e.name])) prMap[e.name] = maxW;
     });
   });
@@ -986,18 +946,17 @@ function renderStats() {
 
 function calcStreak() {
   if (!sessions.length) return 0;
-  var weeks = new Set(sessions.map(function(s) {
-    var d    = new Date(s.date);
-    var jan1 = new Date(d.getFullYear(),0,1);
-    return d.getFullYear() + '-' + Math.ceil(((d-jan1)/86400000+jan1.getDay()+1)/7);
-  }));
-  var sorted = Array.from(weeks).sort().reverse();
+  var weeks = {};
+  sessions.forEach(function(s) {
+    var w = isoWeek(s.date); weeks[w] = true;
+  });
+  var sorted = Object.keys(weeks).sort().reverse();
   var streak = 1;
   for (var i = 1; i < sorted.length; i++) {
-    var p1 = sorted[i-1].split('-').map(Number);
-    var p2 = sorted[i].split('-').map(Number);
-    if (p1[0]===p2[0] && p1[1]-p2[1]===1) streak++;
-    else if (p1[0]-p2[0]===1 && p2[1]>=52 && p1[1]===1) streak++;
+    var p1 = sorted[i-1].split('-W').map(Number);
+    var p2 = sorted[i].split('-W').map(Number);
+    if (p1[0] === p2[0] && p1[1] - p2[1] === 1) streak++;
+    else if (p1[0] - p2[0] === 1 && p2[1] >= 52 && p1[1] === 1) streak++;
     else break;
   }
   return streak;
@@ -1020,20 +979,19 @@ var CHART_OPTS = {
   },
   scales: {
     x: { grid: { color: '#1a1a1a' }, ticks: { color: '#555', font: { family: 'DM Mono', size: 10 } } },
-    y: { grid: { color: '#1a1a1a' }, ticks: { color: '#555', font: { family: 'DM Mono', size: 10 } } }
+    y: { grid: { color: '#1a1a1a' }, ticks: { color: '#555', font: { family: 'DM Mono', size: 10 } }, beginAtZero: true }
   }
 };
 
 function filterByPeriod(arr, period) {
   if (period === 'all') return arr;
-  var now    = new Date();
-  var cutoff = new Date(now);
+  var now = new Date(), cutoff = new Date(now);
   if      (period === '4w') cutoff.setDate(now.getDate() - 28);
   else if (period === '8w') cutoff.setDate(now.getDate() - 56);
   else if (period === '3m') cutoff.setMonth(now.getMonth() - 3);
   else if (period === '6m') cutoff.setMonth(now.getMonth() - 6);
   var cutStr = cutoff.toISOString().slice(0,10);
-  return arr.filter(function(s){return s.date >= cutStr;});
+  return arr.filter(function(s) { return s.date >= cutStr; });
 }
 
 function renderCharts() {
@@ -1060,12 +1018,12 @@ function setFreqPeriod(p, btn) {
 function renderVolumeChart() {
   var filtered = filterByPeriod(sessions, volumePeriod).slice().reverse();
   var labels   = filtered.map(function(s){return fmtDateShort(s.date);});
-  var data     = filtered.map(function(s) {
-    return (s.exercises||[]).reduce(function(tot,e) {
-      return tot + e.sets.reduce(function(sv,set) {
-        return sv + (parseFloat(set.weight)||0) * (parseFloat(set.reps)||0);
-      }, 0);
-    }, 0);
+  var data     = filtered.map(function(s){
+    return (s.exercises||[]).reduce(function(tot,e){
+      return tot + e.sets.reduce(function(sv,set){
+        return sv + (parseFloat(set.weight)||0)*(parseFloat(set.reps)||0);
+      },0);
+    },0);
   });
   var ctx = document.getElementById('chart-volume');
   if (!ctx) return;
@@ -1080,18 +1038,17 @@ function renderVolumeChart() {
 function renderFreqChart() {
   var filtered = filterByPeriod(sessions, freqPeriod);
   var weekMap  = {};
-  filtered.forEach(function(s) { var w = isoWeek(s.date); weekMap[w] = (weekMap[w]||0) + 1; });
+  filtered.forEach(function(s){ var w = isoWeek(s.date); weekMap[w] = (weekMap[w]||0)+1; });
   var weeks = Object.keys(weekMap).sort();
   var ctx = document.getElementById('chart-freq');
   if (!ctx) return;
   if (chartFreq) chartFreq.destroy();
   var opts = JSON.parse(JSON.stringify(CHART_OPTS));
-  opts.scales.y.min = 0;
   opts.scales.y.ticks.stepSize = 1;
   chartFreq = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: weeks.map(function(w){return 'Wk'+w.split('-W')[1]+'\''+w.slice(2,4);}),
+      labels: weeks.map(function(w){ return 'Wk'+w.split('-W')[1]+'\''+w.slice(2,4); }),
       datasets: [{ data: weeks.map(function(w){return weekMap[w];}), backgroundColor: 'rgba(232,255,71,0.65)', borderColor: '#e8ff47', borderWidth: 1, borderRadius: 2 }]
     },
     options: opts
@@ -1102,27 +1059,26 @@ function renderPRChart() {
   var sel = document.getElementById('pr-exercise-select');
   if (!sel) return;
   var exWithWeight = {};
-  sessions.forEach(function(s) {
-    (s.exercises||[]).forEach(function(e) {
-      if (e.sets.some(function(set){return parseFloat(set.weight)>0;})) exWithWeight[e.name] = true;
+  sessions.forEach(function(s){
+    (s.exercises||[]).forEach(function(e){
+      if (e.sets.some(function(set){return parseFloat(set.weight)>0;})) exWithWeight[e.name]=true;
     });
   });
   var exList = Object.keys(exWithWeight).sort();
-  if (!exList.length) return;
+  if (!exList.length) { sel.innerHTML = '<option>No data yet</option>'; return; }
   var prev = sel.value;
   sel.innerHTML = exList.map(function(e){return '<option value="'+e+'"'+(e===prev?' selected':'')+'>'+e+'</option>';}).join('');
   var chosen = sel.value;
   var points = [];
-  sessions.slice().reverse().forEach(function(s) {
-    var ex = (s.exercises||[]).find(function(e){return e.name===chosen;});
+  sessions.slice().reverse().forEach(function(s){
+    var ex = (s.exercises||[]).filter(function(e){return e.name===chosen;})[0];
     if (!ex) return;
-    var maxW = Math.max.apply(null, ex.sets.map(function(set){return parseFloat(set.weight)||0;}));
-    if (maxW > 0) points.push({ date: s.date, w: maxW });
+    var maxW = Math.max.apply(null,[0].concat(ex.sets.map(function(set){return parseFloat(set.weight)||0;})));
+    if (maxW>0) points.push({date:s.date,w:maxW});
   });
   var ctx = document.getElementById('chart-pr');
   if (!ctx) return;
   if (chartPR) chartPR.destroy();
-  var opts = JSON.parse(JSON.stringify(CHART_OPTS));
   chartPR = new Chart(ctx, {
     type: 'line',
     data: {
@@ -1134,7 +1090,7 @@ function renderPRChart() {
         tension: 0.3, fill: true
       }]
     },
-    options: opts
+    options: JSON.parse(JSON.stringify(CHART_OPTS))
   });
 }
 
@@ -1146,16 +1102,16 @@ function renderMuscleChart() {
   var recent = sessions.filter(function(s){return s.date>=cutStr;});
   var muscleSets = {};
   Object.keys(muscleMap).forEach(function(m){muscleSets[m]=0;});
-  recent.forEach(function(s) {
-    (s.exercises||[]).forEach(function(e) {
-      Object.entries(muscleMap).forEach(function(entry) {
-        if (entry[1].indexOf(e.name) !== -1) muscleSets[entry[0]] += e.sets.length;
+  recent.forEach(function(s){
+    (s.exercises||[]).forEach(function(e){
+      Object.keys(muscleMap).forEach(function(m){
+        if (muscleMap[m].indexOf(e.name)!==-1) muscleSets[m]+=e.sets.length;
       });
     });
   });
-  var maxSets = Math.max.apply(null, [1].concat(Object.values(muscleSets)));
+  var maxSets = Math.max.apply(null,[1].concat(Object.values(muscleSets)));
   var sorted  = Object.entries(muscleSets).sort(function(a,b){return b[1]-a[1];});
-  el.innerHTML = sorted.map(function(entry) {
+  el.innerHTML = sorted.map(function(entry){
     var pct = Math.round((entry[1]/maxSets)*100);
     return '<div class="muscle-bar-row">' +
       '<div class="muscle-bar-label"><span>'+entry[0]+'</span><span>'+entry[1]+' sets</span></div>' +
@@ -1174,15 +1130,15 @@ function isoWeek(dateStr) {
 }
 
 // ══════════════════════════════════════════════
-//  LIBRARY
+//  EXERCISE LIBRARY
 // ══════════════════════════════════════════════
 function renderLibraryList() {
   var el = document.getElementById('exercise-library-list');
   if (!el) return;
-  el.innerHTML = exerciseLibrary.map(function(e) {
+  el.innerHTML = exerciseLibrary.map(function(e){
     var isDefault = defaultLibrary.indexOf(e) !== -1;
     return '<span style="font-family:var(--font-mono);font-size:0.63rem;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:2px;color:var(--text-muted);display:flex;align-items:center;gap:6px">' +
-      e + (isDefault ? '' : '<span style="cursor:pointer;color:var(--accent2)" onclick="removeFromLibrary(\'' + e + '\')">✕</span>') + '</span>';
+      e + (isDefault ? '' : '<span style="cursor:pointer;color:var(--accent2)" onclick="removeFromLibrary(\'' + e + '\')">&#x2715;</span>') + '</span>';
   }).join('');
 }
 
@@ -1207,7 +1163,7 @@ function removeFromLibrary(name) {
 //  IMPORT / EXPORT
 // ══════════════════════════════════════════════
 function exportData() {
-  var blob = new Blob([JSON.stringify({ sessions: sessions, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  var blob = new Blob([JSON.stringify({sessions:sessions,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'ironlog-' + new Date().toISOString().slice(0,10) + '.json';
@@ -1215,27 +1171,30 @@ function exportData() {
   URL.revokeObjectURL(a.href);
 }
 
-async function handleImport(event) {
+function handleImport(event) {
   var file = event.target.files[0]; if (!file) return;
-  try {
-    var data     = JSON.parse(await file.text());
+  file.text().then(function(text) {
+    var data     = JSON.parse(text);
     var imported = data.sessions || (Array.isArray(data) ? data : []);
     var added    = 0;
-    for (var i = 0; i < imported.length; i++) {
-      var s = imported[i];
-      if (!sessions.find(function(x){return x.id===s.id;})) {
-        sessions.push(s); added++;
-        await pushSession(s);
+    var pushNext = function(i) {
+      if (i >= imported.length) {
+        sessions.sort(function(a,b){return b.date.localeCompare(a.date);});
+        renderAll(); toast('Imported ' + added + ' session(s)', 'success'); return;
       }
-    }
-    sessions.sort(function(a,b){return b.date.localeCompare(a.date);});
-    renderAll(); toast('Imported ' + added + ' session(s)', 'success');
-  } catch(e) { toast('Import failed', 'error'); }
+      var s = imported[i];
+      if (!sessions.filter(function(x){return x.id===s.id;}).length) {
+        sessions.push(s); added++; pushSession(s);
+      }
+      pushNext(i+1);
+    };
+    pushNext(0);
+  }).catch(function(){ toast('Import failed', 'error'); });
   event.target.value = '';
 }
 
 function confirmClearData() {
-  showConfirm('CLEAR LOCAL CACHE?', 'Clears locally cached sessions. Supabase data is unaffected.', function() {
+  showConfirm('CLEAR LOCAL CACHE?', 'Removes locally cached sessions. Supabase data is unaffected.', function(){
     sessions = []; renderAll(); toast('Local cache cleared');
   });
 }
@@ -1243,21 +1202,19 @@ function confirmClearData() {
 // ══════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════
-function renderAll() { renderHistory(); renderStats(); renderLibraryList(); renderRecentMini(); }
+function renderAll() { renderHistory(); renderStats(); renderRecentMini(); }
 
 function formatDate(d) {
-  var parts  = d.split('-');
-  var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  return parts[2] + ' ' + months[+parts[1]-1] + ' ' + parts[0];
+  var p = d.split('-');
+  var m = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return p[2] + ' ' + m[+p[1]-1] + ' ' + p[0];
 }
-
 function fmtDateShort(d) {
-  var parts  = d.split('-');
-  var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  return parts[2] + '/' + months[+parts[1]-1];
+  var p = d.split('-');
+  var m = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  return p[2] + '/' + m[+p[1]-1];
 }
-
-function fmtTime(d) { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function fmtTime(d) { return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
 
 function showConfirm(title, msg, onOk) {
   document.getElementById('confirm-title').textContent = title;
@@ -1273,7 +1230,7 @@ function toast(msg, type) {
   var el = document.getElementById('toast');
   el.textContent = msg; el.className = 'show ' + type;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ el.className = ''; }, 2800);
+  toastTimer = setTimeout(function(){ el.className=''; }, 2800);
 }
 
 // ══════════════════════════════════════════════
@@ -1284,7 +1241,7 @@ if ('serviceWorker' in navigator) {
 }
 
 // ══════════════════════════════════════════════
-//  GO
+//  BOOT
 // ══════════════════════════════════════════════
 init();
 </script>

@@ -114,10 +114,10 @@ Four interactive charts rendered with Chart.js:
 │  │  ┌────────────────────────────────────────────┐  │   │
 │  │  │              index.html                    │  │   │
 │  │  │                                            │  │   │
-│  │  │  ┌──────────┐  ┌──────────┐  ┌─────────┐   │  │   │
-│  │  │  │   UI     │  │  State   │  │ Charts  │   │  │   │
-│  │  │  │  Layer   │  │ Manager  │  │Chart.js │   │  │   │
-│  │  │  └──────────┘  └──────────┘  └─────────┘   │  │   │
+│  │  │  ┌──────────┐  ┌──────────┐  ┌─────────┐  │  │   │
+│  │  │  │   UI     │  │  State   │  │ Charts  │  │  │   │
+│  │  │  │  Layer   │  │ Manager  │  │Chart.js │  │  │   │
+│  │  │  └──────────┘  └──────────┘  └─────────┘  │  │   │
 │  │  │                                            │  │   │
 │  │  │  ┌──────────────────────────────────────┐  │  │   │
 │  │  │  │         Supabase JS SDK              │  │  │   │
@@ -139,13 +139,13 @@ Four interactive charts rendered with Chart.js:
 ┌─────────────────────────────────────────────────────────┐
 │                      SUPABASE                           │
 │                                                         │
-│  ┌──────────────────┐   ┌──────────────────────────┐    │
-│  │   Auth Service   │   │    PostgreSQL Database   │    │
-│  │                  │   │                          │    │
-│  │  Google OAuth    │   │  sessions table          │    │
-│  │  JWT tokens      │   │  Row Level Security      │    │
-│  │  User profiles   │   │  (user sees own data)    │    │
-│  └──────────────────┘   └──────────────────────────┘    │
+│  ┌──────────────────┐   ┌──────────────────────────┐   │
+│  │   Auth Service   │   │    PostgreSQL Database   │   │
+│  │                  │   │                          │   │
+│  │  Google OAuth    │   │  sessions table          │   │
+│  │  JWT tokens      │   │  Row Level Security      │   │
+│  │  User profiles   │   │  (user sees own data)    │   │
+│  └──────────────────┘   └──────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
                           │
                           │ OAuth redirect
@@ -424,8 +424,8 @@ IronLog uses a **cloud-primary** sync model — Supabase is the source of truth.
 ```
 ┌──────────┐   upsert()    ┌────────────┐   select()   ┌──────────┐
 │ Device A │ ────────────► │  Supabase  │ ◄─────────── │ Device B │
-│ (phone)  │               │ PostgreSQL │              │ (laptop) │
-└──────────┘               └────────────┘              └──────────┘
+│ (phone)  │               │ PostgreSQL │               │ (laptop) │
+└──────────┘               └────────────┘               └──────────┘
 ```
 
 - On **finish session** → `pushSession()` upserts the session to Supabase immediately
@@ -787,6 +787,14 @@ After the first load, IronLog works offline with the following behaviour:
 - **Exercise library not synced** — custom exercises added via Settings are stored in localStorage per device, not in Supabase. Adding a custom exercise on your phone won't appear on your laptop.
 - **Single user per install** — the app is designed for one person. There is no sharing or coaching feature.
 - **Chrome only for Android PWA install** — other Android browsers (Firefox, Samsung Internet) may not show the install prompt or may not support PWA install.
+
+## Bugs Fixed
+
+| Bug | Root cause | Fix applied |
+|---|---|---|
+| Apostrophe in exercise name crashed JS | `Farmer's Walk` used a single quote inside a single-quoted string | Renamed to `Farmers Walk` |
+| Login loop after logout + re-login | `getSession()` fired before Supabase processed the OAuth URL hash, returned null, redirected to auth screen | Switched to `INITIAL_SESSION` event as primary boot trigger; added `booted` gate; set `detectSessionInUrl: true` |
+| Duplicate `waitForSupabase` + broken `saveConfig` | Multiple layered patch edits corrupted the script block | Full script block rewrite replacing everything between `<script>` and `</script>` |
 
 ---
 
