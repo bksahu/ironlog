@@ -557,33 +557,47 @@ function init() {
   var url = SUPABASE_URL;
   var key = SUPABASE_KEY;
 
-  // Wait for SDK then connect
   waitForSupabase(function() {
     try {
-      supabase = window.supabase.createClient(url, key);
-
-      // Handle redirect back from Google OAuth
-      supabase.auth.onAuthStateChange(function(event, session) {
-        if (event === 'SIGNED_IN' && session) {
-          currentUser = session.user;
-          loadApp();
-        } else if (event === 'SIGNED_OUT') {
-          currentUser = null;
-          sessions = [];
-          showScreen('auth');
+      supabase = window.supabase.createClient(url, key, {
+        auth: {
+          detectSessionInUrl: true,
+          persistSession: true,
+          autoRefreshToken: true
         }
       });
 
-      supabase.auth.getSession().then(function(res) {
-        var session = res.data && res.data.session;
+      var appLoaded = false;
+      function bootApp(session) {
+        if (appLoaded) return;
+        appLoaded = true;
         if (session) {
           currentUser = session.user;
+          // Clean up URL hash left by OAuth redirect
+          if (window.location.hash && window.location.hash.indexOf('access_token') !== -1) {
+            history.replaceState(null, '', window.location.pathname);
+          }
           loadApp();
         } else {
           showScreen('auth');
         }
-      }).catch(function() {
-        showScreen('auth');
+      }
+
+      // onAuthStateChange fires first on page load — use it as the primary signal
+      supabase.auth.onAuthStateChange(function(event, session) {
+        if (event === 'SIGNED_IN') {
+          bootApp(session);
+        } else if (event === 'SIGNED_OUT') {
+          appLoaded = false;
+          currentUser = null;
+          sessions = [];
+          showScreen('auth');
+        } else if (event === 'TOKEN_REFRESHED') {
+          // Keep currentUser up to date, no need to reload app
+          if (session) currentUser = session.user;
+        } else if (event === 'INITIAL_SESSION') {
+          bootApp(session);
+        }
       });
 
     } catch(e) {
