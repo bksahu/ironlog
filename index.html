@@ -550,17 +550,14 @@ function showScreen(name) {
 // ══════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════
+var SUPABASE_URL = 'https://dwwpjwfbmbsoqfslolgc.supabase.co';
+var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3d3Bqd2ZibWJzb3Fmc2xvbGdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MTQ2NzMsImV4cCI6MjA5MDM5MDY3M30.oGFq4NAyEQpbzk6t0L7pJHsbxlsyMQh7ReGxVkm3rfU';
+
 function init() {
-  var url = localStorage.getItem('sb_url');
-  var key = localStorage.getItem('sb_key');
+  var url = SUPABASE_URL;
+  var key = SUPABASE_KEY;
 
-  // No credentials → show config immediately, no spinner
-  if (!url || !key) {
-    showScreen('config');
-    return;
-  }
-
-  // Have credentials, wait for SDK then connect
+  // Wait for SDK then connect
   waitForSupabase(function() {
     try {
       supabase = window.supabase.createClient(url, key);
@@ -591,7 +588,7 @@ function init() {
 
     } catch(e) {
       console.error('Supabase init failed:', e);
-      showScreen('config');
+      showScreen('auth');
     }
   });
 }
@@ -606,7 +603,7 @@ function waitForSupabase(cb) {
       clearInterval(t); cb();
     } else if (tries > 60) {
       clearInterval(t);
-      showScreen('config');
+      showScreen('auth');
       alert('Supabase SDK failed to load. Check your internet connection and reload the page.');
     }
   }, 100);
@@ -660,7 +657,7 @@ function copySQL() {
 //  AUTH
 // ══════════════════════════════════════════════
 async function signInWithGoogle() {
-  if (!supabase) { showScreen('config'); return; }
+  if (!supabase) { showScreen('auth'); return; }
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.href }
@@ -670,6 +667,7 @@ async function signInWithGoogle() {
 
 async function signOut() {
   await supabase.auth.signOut();
+  // Note: credentials are hardcoded, nothing to clear
 }
 
 function resetCredentials() {
@@ -677,7 +675,7 @@ function resetCredentials() {
   localStorage.removeItem('sb_url');
   localStorage.removeItem('sb_key');
   supabase = null; currentUser = null; sessions = [];
-  showScreen('config');
+  showScreen('auth');
 }
 
 function updateUserUI() {
