@@ -14,7 +14,23 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Space+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+  (function() {
+    var URLS = [
+      'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
+      'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js'
+    ];
+    var idx = 0;
+    function tryNext() {
+      if (idx >= URLS.length) { window.__sbFailed = true; return; }
+      var s = document.createElement('script');
+      s.src = URLS[idx++];
+      s.onerror = tryNext;
+      document.head.appendChild(s);
+    }
+    tryNext();
+  })();
+  </script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -223,29 +239,40 @@
 
 <!-- CONFIG -->
 <div id="config-screen" style="display:none">
-  <div class="config-card">
-    <div class="config-title">FIRST-TIME SETUP</div>
-    <p class="config-sub">
-      Iron Log uses <strong>Supabase</strong> as its free backend.<br>
-      Enter your project credentials below — find them at<br>
-      <strong>Supabase Dashboard → Project Settings → API</strong>.
-    </p>
+  <div class="config-card" style="max-width:520px">
+    <div class="config-title">SETUP</div>
+    <p class="config-sub">Iron Log needs a free <strong>Supabase</strong> account to store your data. Follow these steps:</p>
+
+    <div class="info-box" style="font-size:0.82rem">
+      <strong>STEP 1 — Create Supabase project</strong><br>
+      Go to <a href="https://supabase.com" target="_blank">supabase.com</a> → Sign up free → New Project → wait ~1 min for it to start.<br><br>
+
+      <strong>STEP 2 — Create the database table</strong><br>
+      In Supabase: <strong>SQL Editor → New query</strong> → paste &amp; run this:<br>
+      <code id="setup-sql-display" style="display:block;margin:8px 0;font-size:0.68rem;line-height:1.8;white-space:pre;overflow-x:auto;color:#e8ff47;background:#0a0a0a;padding:10px;border-radius:3px"></code>
+      <button class="btn btn-sm" onclick="copySQL()">COPY SQL</button><br><br>
+
+      <strong>STEP 3 — Enable Google login</strong><br>
+      Supabase → <strong>Authentication → Providers → Google</strong> → toggle ON → paste your Google Client ID &amp; Secret (from Google Cloud Console → APIs &amp; Services → Credentials).<br><br>
+
+      <strong>STEP 4 — Add your site URL</strong><br>
+      Supabase → <strong>Authentication → URL Configuration</strong>:<br>
+      • Site URL: <code style="color:#e8ff47">https://YOURUSERNAME.github.io/REPONAME</code><br>
+      • Redirect URLs: same URL above<br><br>
+
+      <strong>STEP 5 — Get your API keys</strong><br>
+      Supabase → <strong>Project Settings → API</strong> → copy <strong>Project URL</strong> and <strong>anon public</strong> key below.
+    </div>
+
     <div class="form-group">
       <label class="label">Supabase Project URL</label>
       <input type="url" id="cfg-url" placeholder="https://xxxxxxxxxxxx.supabase.co" />
     </div>
     <div class="form-group">
-      <label class="label">Supabase Anon Key</label>
+      <label class="label">Supabase Anon Key (public)</label>
       <input type="text" id="cfg-key" placeholder="eyJhbGci…" />
     </div>
-
-    <div class="info-box">
-      <strong>Also run this SQL once in Supabase → SQL Editor:</strong>
-      <code id="setup-sql-display" style="display:block;margin-top:10px;font-size:0.7rem;line-height:1.9;white-space:pre;overflow-x:auto;color:var(--text)"></code>
-    </div>
-    <button class="btn btn-sm" onclick="copySQL()" style="margin-bottom:16px">COPY SQL</button>
-    <br><br>
-    <button class="btn btn-primary" onclick="saveConfig()" style="width:100%;justify-content:center;padding:14px">SAVE & CONTINUE</button>
+    <button class="btn btn-primary" onclick="saveConfig()" style="width:100%;justify-content:center;padding:14px">SAVE & OPEN APP</button>
   </div>
 </div>
 
@@ -373,7 +400,10 @@
       <div class="card" style="margin-bottom:16px">
         <div class="label">ACCOUNT</div>
         <div id="user-info" style="font-size:0.9rem;margin-bottom:14px"></div>
-        <button class="btn btn-sm btn-danger" onclick="signOut()">SIGN OUT</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-danger" onclick="signOut()">SIGN OUT</button>
+          <button class="btn btn-sm" onclick="resetCredentials()">RESET CREDENTIALS</button>
+        </div>
       </div>
 
       <div class="card" style="margin-bottom:16px">
@@ -491,70 +521,101 @@ const muscleMap = {
 // ══════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════
-let supabase       = null;
-let currentUser    = null;
-let sessions       = [];
-let exerciseLibrary = [...defaultLibrary];
-let currentSession = null;
-let chartVolume    = null;
-let chartFreq      = null;
-let chartPR        = null;
-let volumePeriod   = '4w';
-let freqPeriod     = '8w';
+var supabase       = null;
+var currentUser    = null;
+var sessions       = [];
+var exerciseLibrary = defaultLibrary.slice();
+var currentSession = null;
+var chartVolume    = null;
+var chartFreq      = null;
+var chartPR        = null;
+var volumePeriod   = '4w';
+var freqPeriod     = '8w';
+
+// ══════════════════════════════════════════════
+//  SHOW SCREEN
+// ══════════════════════════════════════════════
+function showScreen(name) {
+  ['loading-screen','auth-screen','config-screen','app'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  var map = { loading:'loading-screen', auth:'auth-screen', config:'config-screen', app:'app' };
+  var el = document.getElementById(map[name]);
+  if (el) el.style.display = 'flex';
+}
 
 // ══════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════
-async function init() {
-  const url = localStorage.getItem('sb_url');
-  const key = localStorage.getItem('sb_key');
+function init() {
+  var url = localStorage.getItem('sb_url');
+  var key = localStorage.getItem('sb_key');
 
+  // No credentials → show config immediately, no spinner
   if (!url || !key) {
-    showScreen('config'); return;
-  }
-
-  try {
-    supabase = window.supabase.createClient(url, key);
-    const { data: { session } } = await supabase.auth.getSession();
-
-    if (session) {
-      currentUser = session.user;
-      await loadApp();
-    } else {
-      showScreen('auth');
-    }
-
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        currentUser = session.user;
-        await loadApp();
-      } else if (event === 'SIGNED_OUT') {
-        currentUser = null; sessions = [];
-        showScreen('auth');
-      }
-    });
-  } catch(e) {
     showScreen('config');
+    return;
   }
+
+  // Have credentials, wait for SDK then connect
+  waitForSupabase(function() {
+    try {
+      supabase = window.supabase.createClient(url, key);
+
+      // Handle redirect back from Google OAuth
+      supabase.auth.onAuthStateChange(function(event, session) {
+        if (event === 'SIGNED_IN' && session) {
+          currentUser = session.user;
+          loadApp();
+        } else if (event === 'SIGNED_OUT') {
+          currentUser = null;
+          sessions = [];
+          showScreen('auth');
+        }
+      });
+
+      supabase.auth.getSession().then(function(res) {
+        var session = res.data && res.data.session;
+        if (session) {
+          currentUser = session.user;
+          loadApp();
+        } else {
+          showScreen('auth');
+        }
+      }).catch(function() {
+        showScreen('auth');
+      });
+
+    } catch(e) {
+      console.error('Supabase init failed:', e);
+      showScreen('config');
+    }
+  });
 }
 
-async function loadApp() {
-  const lib = localStorage.getItem('exercise_library');
-  if (lib) exerciseLibrary = JSON.parse(lib);
+// Poll until Supabase SDK is available (CDN can be slow)
+function waitForSupabase(cb) {
+  if (window.supabase && window.supabase.createClient) { cb(); return; }
+  var tries = 0;
+  var t = setInterval(function() {
+    tries++;
+    if (window.supabase && window.supabase.createClient) {
+      clearInterval(t); cb();
+    } else if (tries > 60) {
+      clearInterval(t);
+      showScreen('config');
+      alert('Supabase SDK failed to load. Check your internet connection and reload the page.');
+    }
+  }, 100);
+}
+
+function loadApp() {
+  var lib = localStorage.getItem('exercise_library');
+  if (lib) { try { exerciseLibrary = JSON.parse(lib); } catch(e) {} }
   showScreen('app');
   updateUserUI();
-  await syncAll(true);
-}
-
-function showScreen(name) {
-  document.getElementById('loading-screen').style.display = 'none';
-  document.getElementById('auth-screen').style.display    = 'none';
-  document.getElementById('config-screen').style.display  = 'none';
-  document.getElementById('app').style.display            = 'none';
-
-  if (name === 'auth')   document.getElementById('auth-screen').style.display   = 'flex';
-  if (name === 'config') document.getElementById('config-screen').style.display = 'flex';
-  if (name === 'app')    document.getElementById('app').style.display            = 'flex';
+  syncAll(true);
 }
 
 // ══════════════════════════════════════════════
@@ -568,7 +629,25 @@ function saveConfig() {
   localStorage.setItem('sb_key', key);
   document.getElementById('loading-screen').style.display = 'flex';
   document.getElementById('config-screen').style.display  = 'none';
-  init();
+  // Wait for Supabase to load before init
+function waitForSupabase() {
+  if (window.__sbFailed) {
+    document.getElementById('loading-screen').innerHTML =
+      '<div style="text-align:center;padding:40px;max-width:360px">' +
+      '<div style="font-family:var(--font-display);font-size:2rem;color:var(--accent);margin-bottom:16px">IRON LOG</div>' +
+      '<div style="font-family:var(--font-mono);font-size:0.7rem;color:var(--accent2);letter-spacing:0.1em;margin-bottom:16px">FAILED TO LOAD SDK</div>' +
+      '<p style="font-size:0.85rem;color:var(--text-muted);line-height:1.6;margin-bottom:20px">Could not load the Supabase library. This is usually a network/firewall issue.</p>' +
+      '<button onclick="location.reload()" style="font-family:var(--font-mono);font-size:0.72rem;letter-spacing:0.1em;padding:10px 20px;background:var(--accent);color:#0a0a0a;border:none;border-radius:4px;cursor:pointer">RETRY</button>' +
+      '</div>';
+    return;
+  }
+  if (window.supabase && window.supabase.createClient) {
+    init();
+  } else {
+    setTimeout(waitForSupabase, 100);
+  }
+}
+waitForSupabase();
 }
 
 function copySQL() {
@@ -589,6 +668,14 @@ async function signInWithGoogle() {
 
 async function signOut() {
   await supabase.auth.signOut();
+}
+
+function resetCredentials() {
+  if (!confirm('This will clear your Supabase credentials from this device and return to setup. Your cloud data is safe.')) return;
+  localStorage.removeItem('sb_url');
+  localStorage.removeItem('sb_key');
+  supabase = null; currentUser = null; sessions = [];
+  showScreen('config');
 }
 
 function updateUserUI() {
